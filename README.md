@@ -107,7 +107,6 @@ func main() {
 
 ## notes
 
-- call `runtime.LockOSThread()` before setting breakpoints
 - handlers run on system stack - avoid allocations
 - 4 slots available (dr0-dr3)
 - breakpoints are per-thread, propagated via GetThreadContext/SetThreadContext
