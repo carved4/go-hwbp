@@ -61,32 +61,48 @@ import (
     "github.com/carved4/go-wincall"
 )
 
-func main() {
-    runtime.LockOSThread()
-    defer runtime.UnlockOSThread()
+// handler vars - set before hwbp, read after
+var (
+    hitRIP uint64
+    hitRCX uint64
+    wasHit bool
+)
 
+//go:nosplit
+func hwbpHandler(ctx *runtime.HWBPContext) bool {
+    // cannot use fmt or any allocating functions here
+    hitRIP = ctx.RIP()
+    hitRCX = ctx.RCX()
+    wasHit = true
+    
+    ctx.SetRAX(0)
+    runtime.ClearHardwareBreakpoint(0)
+    return true
+}
+
+func main() {
     // resolve target address
     ntdllBase := wincall.GetModuleBase(wincall.GetHash("ntdll.dll"))
     targetAddr := wincall.GetFunctionAddress(ntdllBase, wincall.GetHash("NtOpenSection"))
 
+    fmt.Printf("setting hwbp on 0x%x\n", targetAddr)
+
     // set breakpoint
-    runtime.SetHardwareBreakpoint(targetAddr, 0, func(ctx *runtime.HWBPContext) bool {
-        fmt.Printf("hit at rip=0x%x, rcx=0x%x\n", ctx.RIP(), ctx.RCX())
-        
-        // modify state, skip instructions, etc
-        ctx.SetRAX(0)
-        
-        // clear after first hit
-        runtime.ClearHardwareBreakpoint(0)
-        return true
-    })
+    runtime.SetHardwareBreakpoint(targetAddr, 0, hwbpHandler)
 
     // trigger the function
-    wincall.Call("kernel32.dll", "LoadLibraryW", /* ... */)
+    amsi, _ := wincall.UTF16ptr("amsi.dll")
+    wincall.Call("kernel32.dll", "LoadLibraryW", amsi)
+
+    // print results after handler ran
+    if wasHit {
+        fmt.Printf("hit at rip=0x%x, rcx=0x%x\n", hitRIP, hitRCX)
+    }
 
     // cleanup
     runtime.ClearHardwareBreakpoint(0)
 }
+
 ```
 
 ## notes
